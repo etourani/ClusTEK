@@ -1,0 +1,82 @@
+{
+  "stageA_best": {
+    "mode": "count",
+    "nx": 34,
+    "ny": 34,
+    "R": 5,
+    "dx": 27709.294173065704,
+    "dy": 27048.08828939035,
+    "score": 0.803498713031129,
+    "weights": {
+      "W_SIL": 0.33,
+      "W_DBI": 0.34,
+      "W_COV": 0.33
+    }
+  },
+  "stageB_best": {
+    "nx": 34,
+    "ny": 34,
+    "dense_thr": 0.03076923076923077,
+    "beta": 0.1,
+    "cthr": 0.2,
+    "sil": 0.7388623254558101,
+    "dbi": 0.3374065051387888,
+    "cov": 0.9536,
+    "k": 15,
+    "iters_used": 190,
+    "stop": "converged (max|\u0394c|=8.50e-07)",
+    "score": 0.8127359457775973,
+    "grid_tag": "COARSE",
+    "dx": 27709.294173065704,
+    "dy": 27048.08828939035
+  },
+  "periodic_cca": false,
+  "plots": {
+    "before_coarse": "/home/elyar/Documents/projects/1dif_impu/clustx-20251106T013133Z-1-001/clustx/examples/out_sset1_bo_12/fig_before_clusters_overlay_COARSE.pdf",
+    "after_std": "/home/elyar/Documents/projects/1dif_impu/clustx-20251106T013133Z-1-001/clustx/examples/out_sset1_bo_12/fig_after_std_clusters_overlay_COARSE_beta0.1_cthr0.2.pdf",
+    "after_occa": "/home/elyar/Documents/projects/1dif_impu/clustx-20251106T013133Z-1-001/clustx/examples/out_sset1_bo_12/fig_after_custom_clusters_overlay_COARSE_beta0.1_cthr0.2.pdf"
+  },
+  "weights_used": {
+    "stageB_W_SIL": 0.33,
+    "stageB_W_DBI": 0.34,
+    "stageB_W_COV": 0.33,
+    "source": "BO"
+  },
+  "best_beta": 0.1,
+  "best_iters": 190,
+  "metrics": {
+    "before": {
+      "coverage": 0.8726,
+      "k": 15,
+      "silhouette": 0.7711650948753141,
+      "dbi": 0.3024013935882946,
+      "ARI": 0.7620733545559042,
+      "NMI": 0.8700642192508188,
+      "V_measure": 0.8700642192508189,
+      "FM": 0.7779748915037789,
+      "purity": 0.8726
+    },
+    "after_std": {
+      "coverage": 0.9568,
+      "k": 11,
+      "silhouette": 0.596203454244156,
+      "dbi": 0.5259754356854704,
+      "ARI": 0.7335541747903072,
+      "NMI": 0.874878685504473,
+      "V_measure": 0.8748786855044731,
+      "FM": 0.7666095174333734,
+      "purity": 0.7118
+    },
+    "after_occa": {
+      "coverage": 0.9536,
+      "k": 15,
+      "silhouette": 0.7388623254558101,
+      "dbi": 0.3374065051387888,
+      "ARI": 0.9339810314741028,
+      "NMI": 0.9432564219756372,
+      "V_measure": 0.9432564219756371,
+      "FM": 0.9386718805809584,
+      "purity": 0.953
+    }
+  }
+}

@@ -1,0 +1,2 @@
+[console_scripts]
+clustx = clustx.cli:main

@@ -78,10 +78,10 @@ ruff check .
 
 If you use ClusTEK in academic work, please cite:
 
-- Tourani, E. (2025). *ClusTEK: Diffusion-imputation + connected components grid clustering*. GitHub repository.
+- Tourani, E., Edwards, J. B., Khomami, B. (2025). *ClusTEK: Diffusion-imputation + connected components grid clustering*. GitHub repository.
 
-A paper citation can be added here once published.
+A paper citation will be added here soon (once published).
 
 ## License
 
-MIT — see `LICENSE`.
+MIT style — see `LICENSE`.

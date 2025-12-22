@@ -1,3 +1,0 @@
-[console_scripts]
-clustek = clustek.cli:main
-clustx = clustek.cli:main

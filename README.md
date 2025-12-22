@@ -3,16 +3,11 @@
 **ClusTEK** is a fast, morphology-aware clustering toolkit for molecular simulation data, built around
 **grid aggregation + diffusion imputation + connected-component clustering**.
 
-This repository contains:
-
-- **2D pipeline** 
-- **3D engine** 
-
 ## Key ideas
 
 1. **Grid aggregation:** bin particles into mesh cells and compute a cell-averaged order parameter (e.g., `c_label`).
-2. **Diffusion imputation (optional):** stabilize sparse/noisy grids by diffusing the cell field under periodic BCs.
-3. **Connected components:** cluster selected cells via fast neighborhood connectivity (KDTree / union-find).
+2. **Diffusion imputation:** stabilize sparse/noisy grids by diffusing the cell field under periodic BCs.
+3. **Origin-Constrained connected components:** cluster selected cells via fast neighborhood connectivity (KDTree / union-find).
 
 ## Install
 
@@ -34,7 +29,8 @@ import pandas as pd
 from clustek import ClusTEK3D
 from clustek.core3d import DiffusionParams
 
-df = pd.read_csv("data/sample_3d_snapshot.csv")  # or your own snapshot.csv (needs x,y,z,c_label and xlo/xhi/ylo/yhi/zlo/zhi)
+df = pd.read_csv("data/sample_3d_snapshot.csv")
+# (Required columns x,y,z,c_label and if periodic:xlo/xhi/ylo/yhi/zlo/zhi)
 
 engine = ClusTEK3D(df, cell_size=(1.0, 1.0, 1.0), label_thr=0.4, label_col="c_label")
 engine.particles_to_meshes()
@@ -78,11 +74,13 @@ ruff check .
 
 If you use ClusTEK in academic work, please cite:
 
-- Tourani, E., Edwards, J. B., Khomami, B. (2025). 
-ClusTEK: A grid clustering algorithm augmented with diffusion imputation and origin-constrained connected-component analysis: Application to polymer crystallization,
+Tourani, E., Edwards, J. B., Khomami, B. (2025).  
+**ClusTEK**: A grid clustering algorithm augmented with diffusion imputation and origin-constrained connected-component analysis:  
+Application to polymer crystallization.  
 https://doi.org/10.48550/arXiv.2512.16110
 
 
 ## License
 
-MIT style — see `LICENSE`.
+Custom MIT-style license — see `LICENSE`.
+

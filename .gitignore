@@ -1,31 +1,56 @@
-cat > .gitignore <<'EOF'
+# =========================
 # Python
+# =========================
 __pycache__/
 *.py[cod]
 *$py.class
 
+# =========================
 # Build / packaging
+# =========================
 build/
 dist/
 *.egg-info/
 .eggs/
 pip-wheel-metadata/
 
-# Virtual env
+# =========================
+# Virtual environments
+# =========================
 .venv/
 venv/
 env/
 
-# Jupyter
+# =========================
+# Jupyter / notebooks
+# =========================
 .ipynb_checkpoints/
 
+# =========================
 # OS / editors
+# =========================
 .DS_Store
 .vscode/
 .idea/
 
-# Outputs / generated figures
+# =========================
+# Generated outputs / results
+# =========================
+out_*/
 examples/out_*/
+examples/sample_outputs/*
+
+# Figures (often regenerated)
+*.png
+*.pdf
+*.svg
+
+# Logs
 *.log
-EOF
+
+# =========================
+# Runtime / profiling
+# =========================
+.cache/
+.prof/
 

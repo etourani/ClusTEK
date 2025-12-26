@@ -1,56 +1,99 @@
 # ClusTEK
 
-**ClusTEK** is a fast, morphology-aware clustering toolkit for molecular simulation data, built around
-**grid aggregation + diffusion imputation + connected-component clustering**.
+**ClusTEK** is a grid-based clustering toolkit built upon grid aggregation, diffusion imputation, and connected-component analysis.
+While motivated by molecular simulations, the method is applicable to a wide range of spatially structured datasets.
 
 ## Key ideas
 
-1. **Grid aggregation:** bin particles into mesh cells and compute a cell-averaged order parameter (e.g., `c_label`).
-2. **Diffusion imputation:** stabilize sparse/noisy grids by diffusing the cell field under periodic BCs.
-3. **Origin-Constrained connected components:** cluster selected cells via fast neighborhood connectivity (KDTree / union-find).
+1. **Grid aggregation:** ClusTEK discretizes space into a regular grid and assigns each cell a summary value computed from the points it contains (e.g., averages or counts).
+2. **Diffusion imputation:** The grid field is stabilized by controlled diffusion, allowing information to propagate between neighboring cells and reducing sparsity and noise.
+3. **Origin-Constrained connected components:** Clusters are formed by growing connected components from a user-defined set of origin cells using fast neighborhood connectivity, preventing diffusion from merging unrelated regions.
 
 ## Install
 
-From the repo root:
+From the repository root:
+
+```bash
+pip install -e .
+```
+
+This installs the core ClusTEK package and its dependencies.
+
+To install additional tools needed for development (testing, linting, benchmarks), use:
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-> Requirements are intentionally standard scientific Python. Some 3D “extras” (alpha-shape surface reconstruction, etc.)
-> are optional and can be added later as the paper/release matures.
+> Requirements are intentionally limited to standard scientific Python packages.  
+> Optional 3D post-processing features (e.g., alpha-shape surface reconstruction)  
+> may be added in future releases.
+
 
 ## Quickstart
 
-### 3D (single snapshot)
+## 2D Clustering Pipeline
 
-```python
-import pandas as pd
-from clustek import ClusTEK3D
-from clustek.core3d import DiffusionParams
+**ClusTEK** provides a fully automated 2D diffusion-enhanced grid clustering pipeline.  
+This is the recommended entry point for new users.
 
-df = pd.read_csv("data/sample_3d_snapshot.csv")
-# (Required columns x,y,z,c_label and if periodic:xlo/xhi/ylo/yhi/zlo/zhi)
+The pipeline consists of two stages:
 
-engine = ClusTEK3D(df, cell_size=(1.0, 1.0, 1.0), label_thr=0.4, label_col="c_label")
-engine.particles_to_meshes()
+- **Stage-A (Grid selection):**  
+  Automatic selection of grid resolution and density thresholds using either  
+  grid search or Bayesian optimization.
 
-selected = engine.compute_filtered_cells(use_diffusion=True, diffusion=DiffusionParams(beta=0.1, iters=500))
-cell_clusters = engine.cluster_cells(selected)
+- **Stage-B (Diffusion + clustering):**  
+  Diffusion-based imputation on sparse grids followed by  
+  origin-constrained connected-component analysis (OC-CCA).
 
-print(f"Selected cells: {len(selected)}")
-print(f"Grid clusters:  {len(cell_clusters)}")
+---
+
+### Command-Line Interface
+
+The 2D pipeline can be executed directly from the command line:
+
+```bash
+clustek2d \
+  --input data/aggregation.csv \
+  --outdir out_aggregation \
+  --tuning grid \
+  --make-plots
 ```
 
-### 2D
+This runs the complete two-stage pipeline and writes all results  
+(JSON summaries, CSV tables, and optional figures) to the output directory.
 
-The original packaged 2D pipeline is available as:
+To see all available options:
 
-```python
-from clustek import run_pipeline_2d
+```bash
+clustek2d --help
 ```
 
-(See `examples/2d_quickstart.ipynb` for a fuller run.)
+---
+
+### Python Usage
+
+Programmatic access to the 2D pipeline is available via the Python API.  
+We recommend reviewing the fully working reference scripts provided in the `examples/` directory:
+
+- `examples/run_aggregation_grid.py`
+- `examples/run_aggregation_bo.py`
+- `examples/run_r15_grid.py`, `examples/run_r15_bo.py`
+- `examples/run_sset1_grid.py`, `examples/run_sset1_bo.py`
+
+These scripts demonstrate both grid-search and Bayesian-optimization workflows  
+and are the recommended starting point for Python users.
+
+---
+
+### Detailed Documentation
+
+For a complete description of the 2D pipeline, including parameter explanations,  
+CLI usage, and expected outputs, see:
+
+**2D Usage Guide:** `docs/usage_2d.md`
+
 
 ## Reproducible benchmark scripts
 

@@ -107,6 +107,12 @@ class ClusTEK3D:
             S <- S + beta * Laplacian(S)
 
         Periodic BCs are enforced via numpy roll.
+
+        Notes
+        -----
+        - We clamp the field to [0,1] after each step because `c_label` is assumed
+          to be a normalized score in [0,1]. This prevents explicit diffusion from
+          producing small negative values or overshoots above 1.
         """
         if self.mesh_df is None or self.grid_shape is None:
             raise RuntimeError("Call particles_to_meshes() before diffuse_grid().")
@@ -114,12 +120,17 @@ class ClusTEK3D:
         nx, ny, nz = self.grid_shape
         field = np.zeros((nx, ny, nz), dtype=float)
 
-        # Fill known cells
+        # Fill known (occupied) cells with their mean label
         for row in self.mesh_df.itertuples(index=False):
             field[int(row.xi), int(row.yi), int(row.zi)] = float(row.label_mean)
 
         beta = float(diffusion.beta)
         iters = int(diffusion.iters)
+
+        # (Optional but helpful) basic stability warning for explicit schemes
+        if beta > 0.25:
+            # Not raising: allow power users to experiment
+            pass
 
         for _ in range(iters):
             lap = (
@@ -130,7 +141,11 @@ class ClusTEK3D:
             )
             field = field + beta * lap
 
+            # --- CLAMP (most important change) ---
+            np.clip(field, 0.0, 1.0, out=field)
+
         return field
+
 
     def compute_filtered_cells(
         self,

@@ -2,7 +2,7 @@
 """
 Example: 3D benchmark driver for ClusTEK.
 
-This is intentionally lightweight and meant to be adapted for your paper figures:
+This is intentionally lightweight and meant to be adapted for the paper figures:
 - Load one CSV snapshot
 - Run atom-based CC baseline once
 - Sweep (cell_size, C_thr) and run grid-only / grid+diffusion

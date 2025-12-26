@@ -3,8 +3,8 @@ import os
 import json
 import numpy as np
 #from clustx import runpipeline
-from clustx.core import run_pipeline_2d as run_pipeline
-
+#from clustx.core import run_pipeline_2d as run_pipeline
+from clustek import run_pipeline_2d as run_pipeline
 
 HERE = os.path.dirname(__file__)
 DATA = os.path.join(HERE, "..", "data", "s_set1.csv")

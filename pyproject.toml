@@ -28,7 +28,8 @@ all = ["scikit-optimize>=0.9", "pytest>=7", "ruff>=0.6"]
 
 [project.scripts]
 clustek = "clustek.cli:main"
-clustx = "clustek.cli:main"
+clustek2d = "clustek.cli:main"
+clustx2d  = "clustek.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

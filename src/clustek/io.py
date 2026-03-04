@@ -1,7 +1,7 @@
 import argparse
 import operator
 import pandas as pd
-
+import gzip
 
 # -----------------------------
 # Comparison operator mapping
@@ -20,7 +20,13 @@ def parse_lammps_dump(
     threshold=None,
     comparison="<",
 ):
-    with open(dump_file) as f:
+    #with open(dump_file) as f:
+    if str(dump_file).endswith(".gz"):
+        f = gzip.open(dump_file, "rt")
+    else:
+        f = open(dump_file)
+
+    with f:
         lines = f.readlines()
 
     i = 0
@@ -45,14 +51,19 @@ def parse_lammps_dump(
             #xlo, xhi = map(float, lines[i + 1].split()[:2])
             #ylo, yhi = map(float, lines[i + 2].split()[:2])
             #zlo, zhi = map(float, lines[i + 3].split()[:2])
-            xlo, xhi = [round(float(v), 4) for v in lines[i + 1].split()[:2]]
-            ylo, yhi = [round(float(v), 4) for v in lines[i + 2].split()[:2]]
-            zlo, zhi = [round(float(v), 4) for v in lines[i + 3].split()[:2]]
+            xlo, xhi = [round(float(v), 6) for v in lines[i + 1].split()[:2]]
+            ylo, yhi = [round(float(v), 6) for v in lines[i + 2].split()[:2]]
+            zlo, zhi = [round(float(v), 6) for v in lines[i + 3].split()[:2]]
             i += 4
 
-            assert lines[i].startswith("ITEM: ATOMS")
             header = lines[i].strip().split()[2:]
             i += 1
+
+            # normalize common LAMMPS column names
+            header = [
+                "atom_id" if h == "id" else h
+                for h in header
+            ]
 
             col_index = {name: idx for idx, name in enumerate(header)}
 

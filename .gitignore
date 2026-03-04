@@ -37,13 +37,19 @@ env/
 # Generated outputs / results
 # =========================
 out_*/
-examples/out_*/
-examples/sample_outputs/*
+examples/outputs/**
+
+# --- Keep ONLY key summary tables tracked ---
+!examples/outputs/batch/stageI_stageII_summaries/stageI_final_used.csv
+!examples/outputs/batch/stageI_stageII_summaries/stageI_final_used.tex
 
 # Figures (often regenerated)
 *.png
 *.pdf
 *.svg
+# Allow docs images
+!docs/*.png
+!README_assets/*.png
 
 # Logs
 *.log

@@ -9,32 +9,34 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 # Try to import the newer API; fall back to older API if needed.
 try:
-    from clustx.core import (
+    from clustek.core2d import (
         run_pipeline_2d,
         bin_points_rect, normalize_nonzero, standard_cca_2d,
     )
     run_pipeline = run_pipeline_2d
 except ImportError:
     # Fallback: older clustx exposes `run_pipeline` only
-    from clustx.core import (
+    from clustx.core2d import (
         run_pipeline as _run_pipeline,
         bin_points_rect, normalize_nonzero, standard_cca_2d,
     )
     run_pipeline = _run_pipeline
 
 # (Optional) Print which clustx we actually loaded, for sanity:
-import clustx
-print("Using clustx from:", inspect.getfile(clustx))
+#import clustx
+#print("Using clustx from:", inspect.getfile(clustx))
 
 
 
-HERE = os.path.dirname(__file__)
-DATA_DIR = os.path.join(HERE, "..", "data")
-OUT_DIR  = os.path.join(HERE, "stageI_overlays")
-os.makedirs(OUT_DIR, exist_ok=True)
+HERE = Path(__file__).resolve().parent           # examples/
+REPO = HERE.parents[0]                           # repo root
+DATA_DIR = REPO / "data" / "synthetic"
+OUT_DIR = HERE / "outputs" / "batch" / "stageI_stageII_summaries"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- Datasets: filename -> (pretty_name, expected_n_clusters or None)
 DATASETS = {
@@ -107,9 +109,10 @@ def _plot_overlay_dense_cca(labels, points, dense_mask_grid, title, png_path,
     plt.savefig(png_path, dpi=300, bbox_inches="tight", pad_inches=0.05)
     plt.close(fig)
 
-def _stageI_overlay_png(out_root, pretty, strategy):
-    os.makedirs(os.path.join(out_root, "figs", "stageI_overlays"), exist_ok=True)
-    return os.path.join(out_root, "figs", "stageI_overlays", f"{pretty}_{strategy}.png")
+def _stageI_overlay_png(out_root: Path, pretty: str, strategy: str) -> Path:
+    d = out_root / "figs" / "stageI_overlays"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{pretty}_{strategy}.png"
 
 # Common knobs for quick Stage-I (same as before)
 COMMON_ARGS = dict(
@@ -129,7 +132,7 @@ COMMON_ARGS = dict(
 rows = []
 
 for fname, (pretty, k_true) in DATASETS.items():
-    csv_path = os.path.join(DATA_DIR, fname)
+    csv_path = str(DATA_DIR / fname)
     df = pd.read_csv(csv_path)
     if not {"x","y"}.issubset(df.columns):
         raise ValueError(f"{fname} must have columns 'x','y'.")
@@ -143,7 +146,7 @@ for fname, (pretty, k_true) in DATASETS.items():
     x_min -= pad_x; x_max += pad_x; y_min -= pad_y; y_max += pad_y
 
     for strategy in ["grid", "bo"]:
-        out_root = os.path.join(OUT_DIR, f"{pretty}_{strategy}")
+        out_root = str(OUT_DIR / f"{pretty}_{strategy}")
         os.makedirs(out_root, exist_ok=True)
 
         res = run_pipeline(
@@ -186,11 +189,11 @@ for fname, (pretty, k_true) in DATASETS.items():
             "params": params_str,
             "nx": nx, "ny": ny,
             "Q_stageI": q_score,
-            "overlay_png": os.path.relpath(fig_path, start=OUT_DIR),
+            "overlay_png": os.path.relpath(str(fig_path), start=str(OUT_DIR)),
         })
 
 # Write CSV & LaTeX table
-summary_csv = os.path.join(OUT_DIR, "stageI_final_used.csv")
+summary_csv = OUT_DIR / "stageI_final_used.csv"
 pd.DataFrame(rows).to_csv(summary_csv, index=False)
 
 tex_lines = [
@@ -223,7 +226,7 @@ tex_lines[-1] = r"\bottomrule"
 tex_lines.append(r"\end{tabular}")
 tex_lines.append(r"\end{table}")
 
-table_tex_path = os.path.join(OUT_DIR, "stageI_final_used.tex")
+table_tex_path = OUT_DIR / "stageI_final_used.tex"
 with open(table_tex_path, "w") as f:
     f.write("\n".join(tex_lines))
 

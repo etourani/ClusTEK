@@ -3,7 +3,7 @@
 Historically this project shipped as the `clustx` Python package.
 The ClusTEK repo now ships the canonical package name `clustek`.
 
-If you previously used:
+If one previously used:
 
     from clustx import run_pipeline
 

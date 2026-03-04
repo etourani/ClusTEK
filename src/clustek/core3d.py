@@ -1,37 +1,55 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from scipy import ndimage
 from scipy.spatial import cKDTree
 
 
 @dataclass(frozen=True)
 class DiffusionParams:
-    """Parameters for diffusion-based imputation on the 3D mesh field."""
+    """Parameters for diffusion imputation on 3D mesh grids.
+
+    beta:
+        Explicit Euler diffusion coefficient (6-neighbor Laplacian). Conservative guideline:
+        beta <= 1/6 for stability (unit spacing). Using smaller values (0.02--0.10) is typical.
+    iters:
+        Number of explicit diffusion iterations.
+    csel:
+        Post-diffusion selection threshold for admitting sparse/unsampled cells.
+        Dense pre-diffusion cells are always retained.
+    """
     beta: float = 0.10
     iters: int = 500
+    csel: float = 0.10
 
 
 class ClusTEK3D:
     """
     ClusTEK 3D grid clustering engine.
 
-    Core idea (per snapshot):
-      1) Bin atoms into a regular 3D grid (cell_size).
-      2) Compute a cell-averaged scalar label (e.g., crystallinity index c_label).
-      3) Optionally diffuse/impute the grid field (periodic boundary conditions).
-      4) Select "active" cells by threshold and cluster them via connectivity (KDTree).
-      5) (Optional) Build an atom-based connected-component clustering as a reference.
+    Per snapshot:
+      1) Bin atoms into a regular 3D grid.
+      2) Compute cell-averaged scalar field C^(0) (e.g., mean crystallinity per cell).
+      3) Build masks (MD strategy):
+           - dense occupied cells: C^(0) >= C_thr
+           - sparse occupied cells: 0 < C^(0) < C_thr
+           - true-melt occupied cells: C^(0) == 0 (within tol)
+           - unsampled cells: no atoms in cell
+      4) Diffuse from dense into (sparse + unsampled) only.
+         Dense cells are clamped to C^(0); true-melt occupied cells clamped to 0.
+      5) Select cells for clustering:
+           - keep all dense occupied cells
+           - admit sparse/unsampled cells only if C^(diff) >= C_sel
+      6) Cluster selected cells via periodic KDTree connectivity in *physical* space.
 
     Notes
     -----
-    - Input dataframe must include columns: x, y, z, c_label (or your label column),
-      plus xlo/xhi/ylo/yhi/zlo/zhi for periodic wrapping.
-    - This class is snapshot-centric: you pass a dataframe already filtered to a single step.
+    - Input dataframe must include columns: x, y, z, label_col,
+      plus xlo/xhi/ylo/yhi/zlo/zhi for periodic box bounds.
+    - Assumes per-atom scalar is bounded in [0,1] (true for 0/1 crystallinity labels).
     """
 
     def __init__(
@@ -42,30 +60,32 @@ class ClusTEK3D:
         label_thr: float = 0.40,
         label_col: str = "c_label",
         bounds_cols: Tuple[str, str, str, str, str, str] = ("xlo", "xhi", "ylo", "yhi", "zlo", "zhi"),
+        zero_tol: float = 1e-12,
     ) -> None:
         self.data = data.copy()
         self.cell_size = tuple(float(v) for v in cell_size)
         self.cthr = float(label_thr)
         self.label_col = label_col
         self.bounds_cols = bounds_cols
+        self.zero_tol = float(zero_tol)
 
         required = {"x", "y", "z", self.label_col, *self.bounds_cols}
         missing = required.difference(self.data.columns)
         if missing:
             raise ValueError(f"Missing required columns: {sorted(missing)}")
 
-        # Box bounds (assumed constant within snapshot)
         xlo, xhi, ylo, yhi, zlo, zhi = (float(self.data[c].iloc[0]) for c in self.bounds_cols)
-        self.xlo, self.xhi, self.ylo, self.yhi, self.zlo, self.zhi = xlo, xhi, ylo, yhi, zlo, zhi
+        self.xlo, self.xhi = xlo, xhi
+        self.ylo, self.yhi = ylo, yhi
+        self.zlo, self.zhi = zlo, zhi
         self.Lx, self.Ly, self.Lz = (xhi - xlo), (yhi - ylo), (zhi - zlo)
 
-        # Will be filled after particles_to_meshes()
         self.mesh_df: Optional[pd.DataFrame] = None
         self.grid_shape: Optional[Tuple[int, int, int]] = None
 
-    # ---------------------------------------------------------------------
+    # ------------------------------------------------------------------
     # Mesh construction
-    # ---------------------------------------------------------------------
+    # ------------------------------------------------------------------
     def particles_to_meshes(self) -> pd.DataFrame:
         """Assign each particle to a mesh cell and compute per-cell mean label."""
         dx, dy, dz = self.cell_size
@@ -88,7 +108,7 @@ class ClusTEK3D:
             .rename(columns={self.label_col: "label_mean"})
         )
 
-        # cell centers
+        # cell centers in physical coordinates
         cell_means["x"] = self.xlo + (cell_means["xi"] + 0.5) * dx
         cell_means["y"] = self.ylo + (cell_means["yi"] + 0.5) * dy
         cell_means["z"] = self.zlo + (cell_means["zi"] + 0.5) * dz
@@ -96,41 +116,81 @@ class ClusTEK3D:
         self.mesh_df = cell_means
         return cell_means
 
-    # ---------------------------------------------------------------------
-    # Diffusion / imputation
-    # ---------------------------------------------------------------------
-    def diffuse_grid(self, diffusion: DiffusionParams) -> np.ndarray:
+    # ------------------------------------------------------------------
+    # Internal helpers: field + masks
+    # ------------------------------------------------------------------
+    def _build_field_and_masks(
+        self,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
-        Build a dense (nx,ny,nz) label field and apply explicit diffusion steps.
+        Build the pre-diffusion field C^(0) and masks.
 
-        Diffusion update (explicit Euler on a 6-neighbor Laplacian):
-            S <- S + beta * Laplacian(S)
+        Returns
+        -------
+        field0:
+            (nx, ny, nz) array. Occupied cells filled by label_mean; unsampled are 0 placeholder.
+        dense_mask:
+            occupied & (field0 >= cthr)
+        sparse_mask:
+            occupied & (0 < field0 < cthr)
+        melt_mask:
+            occupied & (field0 == 0 within tol)
+        unsampled_mask:
+            ~occupied
+        """
+        if self.mesh_df is None or self.grid_shape is None:
+            raise RuntimeError("Call particles_to_meshes() before building fields.")
 
-        Periodic BCs are enforced via numpy roll.
+        nx, ny, nz = self.grid_shape
+        field0 = np.zeros((nx, ny, nz), dtype=float)
+        occupied = np.zeros((nx, ny, nz), dtype=bool)
 
-        Notes
-        -----
-        - We clamp the field to [0,1] after each step because `c_label` is assumed
-          to be a normalized score in [0,1]. This prevents explicit diffusion from
-          producing small negative values or overshoots above 1.
+        for row in self.mesh_df.itertuples(index=False):
+            i, j, k = int(row.xi), int(row.yi), int(row.zi)
+            val = float(row.label_mean)
+            # enforce bounded assumption
+            if val < 0.0:
+                val = 0.0
+            elif val > 1.0:
+                val = 1.0
+            field0[i, j, k] = val
+            occupied[i, j, k] = True
+
+        unsampled_mask = ~occupied
+        melt_mask = occupied & (field0 <= self.zero_tol)
+        dense_mask = occupied & (field0 >= self.cthr)
+        sparse_mask = occupied & (~dense_mask) & (~melt_mask)
+
+        return field0, dense_mask, sparse_mask, melt_mask, unsampled_mask
+
+    # ------------------------------------------------------------------
+    # Diffusion / imputation (masked)
+    # ------------------------------------------------------------------
+    def diffuse_grid(self, diffusion: DiffusionParams) -> Dict[str, np.ndarray]:
+        """
+        Run masked diffusion on the 3D field with periodic boundary conditions.
+
+        Update only:
+            sparse occupied cells + unsampled cells
+
+        Clamp each iteration:
+            dense occupied cells -> fixed to field0
+            true-melt occupied cells -> fixed to 0
+            overall -> clipped to [0,1]
         """
         if self.mesh_df is None or self.grid_shape is None:
             raise RuntimeError("Call particles_to_meshes() before diffuse_grid().")
 
-        nx, ny, nz = self.grid_shape
-        field = np.zeros((nx, ny, nz), dtype=float)
-
-        # Fill known (occupied) cells with their mean label
-        for row in self.mesh_df.itertuples(index=False):
-            field[int(row.xi), int(row.yi), int(row.zi)] = float(row.label_mean)
+        field0, dense_mask, sparse_mask, melt_mask, unsampled_mask = self._build_field_and_masks()
+        field = field0.copy()
 
         beta = float(diffusion.beta)
         iters = int(diffusion.iters)
+        if beta <= 0:
+            raise ValueError("Diffusion beta must be > 0.")
+        # allow expert use; no hard error here
 
-        # (Optional but helpful) basic stability warning for explicit schemes
-        if beta > 0.25:
-            # Not raising: allow power users to experiment
-            pass
+        update_mask = sparse_mask | unsampled_mask
 
         for _ in range(iters):
             lap = (
@@ -139,14 +199,27 @@ class ClusTEK3D:
                 + np.roll(field, 1, axis=2) + np.roll(field, -1, axis=2)
                 - 6.0 * field
             )
-            field = field + beta * lap
 
-            # --- CLAMP (most important change) ---
+            field[update_mask] = field[update_mask] + beta * lap[update_mask]
             np.clip(field, 0.0, 1.0, out=field)
 
-        return field
+            # re-impose constraints
+            field[dense_mask] = field0[dense_mask]
+            field[melt_mask] = 0.0
 
+        return {
+            "field0": field0,
+            "field_final": field,
+            "dense_mask": dense_mask,
+            "sparse_mask": sparse_mask,
+            "melt_mask": melt_mask,
+            "unsampled_mask": unsampled_mask,
+            "update_mask": update_mask,
+        }
 
+    # ------------------------------------------------------------------
+    # Cell selection
+    # ------------------------------------------------------------------
     def compute_filtered_cells(
         self,
         *,
@@ -154,9 +227,12 @@ class ClusTEK3D:
         diffusion: DiffusionParams = DiffusionParams(),
     ) -> pd.DataFrame:
         """
-        Return a dataframe of selected cell centers (x,y,z) and indices (xi,yi,zi).
+        Return selected cells for clustering.
 
-        If use_diffusion=True, threshold uses the diffused field; otherwise uses raw cell means.
+        - no diffusion: keep occupied cells with label_mean >= C_thr
+        - with diffusion:
+            keep all dense occupied cells,
+            plus (sparse OR unsampled) cells if diffused field >= C_sel
         """
         if self.mesh_df is None:
             self.particles_to_meshes()
@@ -167,40 +243,112 @@ class ClusTEK3D:
         if not use_diffusion:
             sel = self.mesh_df[self.mesh_df["label_mean"] >= self.cthr].copy()
             sel.rename(columns={"label_mean": "label_used"}, inplace=True)
+            sel["selected_from"] = "dense"
             return sel
 
-        field = self.diffuse_grid(diffusion)
-        # read back the diffused values at each occupied cell
-        vals = []
-        for row in self.mesh_df.itertuples(index=False):
-            vals.append(field[int(row.xi), int(row.yi), int(row.zi)])
-        m = self.mesh_df.copy()
-        m["label_used"] = np.asarray(vals, dtype=float)
+        out = self.diffuse_grid(diffusion)
+        field_final = out["field_final"]
+        dense_mask = out["dense_mask"]
+        sparse_mask = out["sparse_mask"]
+        unsampled_mask = out["unsampled_mask"]
 
-        sel = m[m["label_used"] >= self.cthr].copy()
-        return sel
+        csel = float(diffusion.csel)
 
-    # ---------------------------------------------------------------------
-    # Clustering on selected cells
-    # ---------------------------------------------------------------------
-    def cluster_cells(self, selected_cells: pd.DataFrame, *, radius: Optional[float] = None) -> Dict[int, List[Tuple[int, int, int]]]:
+        selected_mask = dense_mask.copy()
+        admit_mask = (sparse_mask | unsampled_mask) & (field_final >= csel)
+        selected_mask |= admit_mask
+
+        idx = np.argwhere(selected_mask)
+        if idx.size == 0:
+            return pd.DataFrame(columns=["xi", "yi", "zi", "x", "y", "z", "label_used", "label_raw", "selected_from"])
+
+        dx, dy, dz = self.cell_size
+
+        # for label_raw lookup (occupied only)
+        occupied_lookup = {
+            (int(r.xi), int(r.yi), int(r.zi)): float(r.label_mean)
+            for r in self.mesh_df.itertuples(index=False)
+        }
+
+        rows: List[Dict[str, float]] = []
+        for i, j, k in idx:
+            i, j, k = int(i), int(j), int(k)
+            x = self.xlo + (i + 0.5) * dx
+            y = self.ylo + (j + 0.5) * dy
+            z = self.zlo + (k + 0.5) * dz
+
+            if dense_mask[i, j, k]:
+                src = "dense"
+            elif sparse_mask[i, j, k]:
+                src = "sparse_imputed"
+            elif unsampled_mask[i, j, k]:
+                src = "unsampled_imputed"
+            else:
+                src = "other"
+
+            rows.append(
+                {
+                    "xi": i,
+                    "yi": j,
+                    "zi": k,
+                    "x": x,
+                    "y": y,
+                    "z": z,
+                    "label_used": float(field_final[i, j, k]),
+                    "label_raw": float(occupied_lookup.get((i, j, k), np.nan)),
+                    "selected_from": src,
+                }
+            )
+
+        return pd.DataFrame(rows)
+
+    # ------------------------------------------------------------------
+    # Clustering on selected cells (PERIODIC)
+    # ------------------------------------------------------------------
+    def cluster_cells(
+        self,
+        selected_cells: pd.DataFrame,
+        *,
+        radius: Optional[float] = None,
+    ) -> Dict[int, List[int]]:
         """
-        Cluster selected cells via connectivity in index space.
+        Cluster selected cells via periodic connectivity in physical space.
 
-        By default radius=1.01 and clustering is performed in (xi,yi,zi) index space,
-        which links face-adjacent and edge-adjacent cells depending on your radius.
+        We cluster using the physical cell centers (x,y,z) with a periodic KDTree:
+            cKDTree(coords_shifted, boxsize=(Lx,Ly,Lz))
+
+        IMPORTANT:
+        SciPy requires coords to be in [0,L) when boxsize is used,
+        so we shift by (xlo,ylo,zlo) before building the tree.
+
+        Returns
+        -------
+        dict cluster_id -> list of row indices (into selected_cells)
         """
         if selected_cells.empty:
             return {}
 
         if radius is None:
-            radius = 1.01
+            # default: face-adjacent at ~1 cell in physical space.
+            # For cubic cells, radius ~ cell_size works; we use min(dx,dy,dz)*1.01
+            dx, dy, dz = self.cell_size
+            radius = 1.01 * min(dx, dy, dz)
 
-        coords = selected_cells[["xi", "yi", "zi"]].to_numpy(dtype=float)
-        tree = cKDTree(coords)
-        pairs = tree.query_pairs(r=radius)
+        coords = selected_cells[["x", "y", "z"]].to_numpy(dtype=float)
 
-        # Union-find
+        # ---- shift into [0,L) for periodic KDTree ----
+        coords[:, 0] -= self.xlo
+        coords[:, 1] -= self.ylo
+        coords[:, 2] -= self.zlo
+
+        # Numerical safety: wrap into [0,L)
+        coords[:, 0] = np.mod(coords[:, 0], self.Lx)
+        coords[:, 1] = np.mod(coords[:, 1], self.Ly)
+        coords[:, 2] = np.mod(coords[:, 2], self.Lz)
+
+        tree = cKDTree(coords, boxsize=(self.Lx, self.Ly, self.Lz))
+        pairs = tree.query_pairs(r=float(radius))
+
         n = len(coords)
         parent = np.arange(n, dtype=int)
 
@@ -218,19 +366,18 @@ class ClusTEK3D:
         for i, j in pairs:
             union(i, j)
 
-        clusters: Dict[int, List[Tuple[int, int, int]]] = {}
-        xi_yi_zi = selected_cells[["xi", "yi", "zi"]].to_numpy(dtype=int)
+        clusters: Dict[int, List[int]] = {}
         for idx in range(n):
             root = find(idx)
-            clusters.setdefault(root, []).append(tuple(map(int, xi_yi_zi[idx])))
+            clusters.setdefault(root, []).append(idx)
 
-        # reindex labels to 1..K for convenience
+        # reindex 1..K
         remap = {old: new for new, old in enumerate(sorted(clusters.keys()), start=1)}
         return {remap[k]: v for k, v in clusters.items()}
 
-    # ---------------------------------------------------------------------
-    # Atom-based reference clustering (optional baseline)
-    # ---------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Atom-based reference clustering (PERIODIC)
+    # ------------------------------------------------------------------
     def cluster_atoms_connected_components(
         self,
         *,
@@ -238,13 +385,13 @@ class ClusTEK3D:
         label_filter_thr: Optional[float] = None,
     ) -> np.ndarray:
         """
-        Atom-based connected components on a distance graph.
+        Atom-based connected components under periodic boundary conditions.
 
-        Returns an integer array of length N atoms, with 0 meaning 'unlabeled'
-        and positive integers indicating cluster ids.
-
-        This is intended as a "ground truth-ish" reference when you filter atoms
-        by a crystallinity threshold.
+        Returns
+        -------
+        labels : (N,) int
+            0 -> background
+            1..K -> component id among atoms with label >= label_filter_thr
         """
         if label_filter_thr is None:
             label_filter_thr = self.cthr
@@ -256,8 +403,18 @@ class ClusTEK3D:
         if not np.any(mask):
             return labels
 
-        pts_f = pts[mask]
-        tree = cKDTree(pts_f)
+        pts_f = pts[mask].copy()
+
+        # ---- shift into [0,L) for periodic KDTree ----
+        pts_f[:, 0] -= self.xlo
+        pts_f[:, 1] -= self.ylo
+        pts_f[:, 2] -= self.zlo
+
+        pts_f[:, 0] = np.mod(pts_f[:, 0], self.Lx)
+        pts_f[:, 1] = np.mod(pts_f[:, 1], self.Ly)
+        pts_f[:, 2] = np.mod(pts_f[:, 2], self.Lz)
+
+        tree = cKDTree(pts_f, boxsize=(self.Lx, self.Ly, self.Lz))
         pairs = tree.query_pairs(r=float(cutoff))
 
         n = len(pts_f)
@@ -277,9 +434,8 @@ class ClusTEK3D:
         for i, j in pairs:
             union(i, j)
 
-        # assign component ids
         comp = np.zeros(n, dtype=int)
-        roots = {}
+        roots: Dict[int, int] = {}
         next_id = 1
         for i in range(n):
             r = find(i)
@@ -290,56 +446,3 @@ class ClusTEK3D:
 
         labels[np.where(mask)[0]] = comp
         return labels
-
-    # ---------------------------------------------------------------------
-    # Utility: overlap matching (grid clusters -> atom clusters)
-    # ---------------------------------------------------------------------
-    @staticmethod
-    def match_clusters_by_overlap(
-        atom_labels: np.ndarray,
-        grid_assignments: np.ndarray,
-        *,
-        min_jaccard: float = 0.0,
-    ) -> Dict[int, int]:
-        """
-        Match each grid cluster to an atom cluster by maximum Jaccard overlap.
-
-        Parameters
-        ----------
-        atom_labels:
-            Per-atom cluster labels (0 = background).
-        grid_assignments:
-            Per-atom grid cluster labels (0 = background), e.g. label inherited from the atom's cell.
-        min_jaccard:
-            If best overlap < min_jaccard, the grid cluster is left unmatched.
-
-        Returns
-        -------
-        mapping: dict grid_cluster_id -> atom_cluster_id
-        """
-        mapping: Dict[int, int] = {}
-        grid_ids = sorted(set(grid_assignments) - {0})
-        atom_ids = sorted(set(atom_labels) - {0})
-
-        if not grid_ids or not atom_ids:
-            return mapping
-
-        # precompute masks
-        atom_masks = {a: (atom_labels == a) for a in atom_ids}
-
-        for g in grid_ids:
-            gmask = (grid_assignments == g)
-            best_a = 0
-            best_j = -1.0
-            for a in atom_ids:
-                amask = atom_masks[a]
-                inter = np.sum(gmask & amask)
-                union = np.sum(gmask | amask)
-                j = (inter / union) if union > 0 else 0.0
-                if j > best_j:
-                    best_j = j
-                    best_a = a
-            if best_j >= float(min_jaccard):
-                mapping[g] = best_a
-
-        return mapping

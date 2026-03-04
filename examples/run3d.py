@@ -21,12 +21,14 @@ import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
+import gzip
 
 import pandas as pd
 import matplotlib.pyplot as plt
 
 from clustek import ClusTEK3D
 from clustek.core3d import DiffusionParams
+from clustek.io import parse_lammps_dump
 
 
 # -----------------------------
@@ -36,7 +38,15 @@ def _repo_root_from_examples() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def resolve_md_csv(dataset: Optional[str], csv_arg: Optional[str]) -> Path:
+def resolve_md_dataset(dataset: Optional[str], csv_arg: Optional[str]) -> Path:
+    """
+    Resolve dataset path.
+
+    Accepts:
+        --dataset name   -> searches data/md/name.*
+        --csv path       -> direct file path
+    """
+
     if csv_arg:
         p = Path(csv_arg).expanduser().resolve()
         if not p.exists():
@@ -46,20 +56,52 @@ def resolve_md_csv(dataset: Optional[str], csv_arg: Optional[str]) -> Path:
     if not dataset:
         raise ValueError("Provide either --dataset or --csv.")
 
-    ds = dataset.strip()
     repo = _repo_root_from_examples()
+    data_dir = repo / "data" / "md"
 
-    candidates = [
-        repo / "data" / "md" / f"{ds}.csv",
-        repo / "data" / f"{ds}.csv",  # legacy fallback
-    ]
-    for c in candidates:
-        if c.exists():
-            return c
+    # find any matching file extension
+    matches = list(data_dir.glob(f"{dataset}.*"))
 
-    raise FileNotFoundError(
-        f"Could not resolve MD dataset '{ds}'. Tried:\n" + "\n".join(str(x) for x in candidates)
-    )
+    if not matches:
+        raise FileNotFoundError(
+            f"No dataset found for '{dataset}' in {data_dir}"
+        )
+
+    # prefer csv if multiple files exist
+    matches.sort(key=lambda p: (p.suffix != ".csv", p.suffix))
+    return matches[0]
+
+
+
+
+def load_dataset(path: Path) -> pd.DataFrame:
+    """
+    Load CSV or LAMMPS dump dataset.
+
+    For dump files, automatically compute c_label from entropy.
+    """
+
+    suffix = path.suffix.lower()
+
+    if suffix == ".gz":
+        suffix = Path(path.stem).suffix.lower()
+
+    if suffix == ".csv":
+        print(f"[INFO] Loading CSV: {path}")
+        return pd.read_csv(path)
+
+    if suffix in [".dump", ".lammpstrj", ".lmp"]:
+        print(f"[INFO] Parsing LAMMPS dump: {path}")
+
+        return parse_lammps_dump(
+            path,
+            label_col="c_Entp",
+            threshold=-5.8,
+            comparison="<",
+        )
+
+    raise ValueError(f"Unsupported file format: {path}. The current code supports CSV, or lammps dump dile (included gzipped files). If you have other file formats, you need to make your own modiftications in the ClusTEK/src/clustek/io.py file. If you you have question, please contact etourani@tennessee.edu")
+
 
 
 def default_out_dir(run_name: str) -> Path:
@@ -155,7 +197,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    csv_path = resolve_md_csv(args.dataset, args.csv)
+    csv_path = resolve_md_dataset(args.dataset, args.csv)
     run_name = args.run_name or (args.dataset if args.dataset else csv_path.stem)
 
     out_dir = Path(args.out).expanduser().resolve() if args.out else default_out_dir(run_name)
@@ -163,7 +205,8 @@ def main() -> None:
     (out_dir / "plots").mkdir(parents=True, exist_ok=True)
 
     print(f"\nLoading: {csv_path}")
-    df = pd.read_csv(csv_path)
+    #df = pd.read_csv(csv_path)
+    df = load_dataset(csv_path)  # csv_path is only the var name here, I haven't changed it. It can be a dump file etc. 
 
     # --- Sweep configs ---
     cell_sizes = [(0.8, 0.8, 0.8), (1.0, 1.0, 1.0), (1.2, 1.2, 1.2)]

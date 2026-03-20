@@ -1,13 +1,42 @@
 # ClusTEK
 
 **ClusTEK** is a grid-based clustering toolkit built upon grid aggregation, diffusion imputation, and connected-component analysis.
-While motivated by molecular simulations, the method is applicable to a wide range of spatially structured datasets.
 
-## Key ideas
 
-1. **Grid aggregation:** ClusTEK discretizes space into a regular grid and assigns each cell a summary value computed from the points it contains (e.g., averages or counts).
-2. **Diffusion imputation:** The grid field is stabilized by controlled diffusion, allowing information to propagate between neighboring cells and reducing sparsity and noise.
-3. **Origin-Constrained connected components:** Clusters are formed by growing connected components from a user-defined set of origin cells using fast neighborhood connectivity, preventing diffusion from merging unrelated regions.
+The method combines grid discretization, local diffusion-based imputation, and topology-preserving connected-component analysis to recover physically meaningful clusters under sparse and noisy sampling conditions.
+
+
+While motivated by molecular simulations data, the method is applicable to a wide range of spatially structured datasets.
+
+
+---
+
+## Method Overview
+
+![ClusTEK pipeline](README_assets/ClusTEK_pipeline.jpg)
+
+ClusTEK consists of two main stages (Stage II is the main novelty in this contribution):
+
+### **Stage I — Grid construction and pre-diffusion classification**
+- Discretize space into a structured grid
+- Compute a scalar field \( C^{(0)}_{i,j,k} \) (e.g., counts or averaged attributes)
+- Classify cells into:
+  - dense
+  - sparse
+  - empty  
+  using a threshold \( C_{\mathrm{thr}} \)
+
+### **Stage II — Diffusion imputation and clustering**
+- Apply **finite, local diffusion** to propagate information from dense → sparse cells (or missing value cells) 
+- Dense cells are **clamped** (Dirichlet constraint)
+- Sparse cells are updated iteratively to obtain \( C^{(n)} \)
+- Perform **origin-constrained connected-component analysis (OC-CCA)**:
+  - seeded from original dense cells
+  - prevents artificial merging of distinct clusters
+
+---
+
+
 
 ## Install
 
@@ -55,7 +84,7 @@ The 2D pipeline can be executed directly from the command line:
 
 ```bash
 clustek2d \
-  --input data/aggregation.csv \
+  --input data/synthetic/aggregation.csv \
   --outdir out_aggregation \
   --tuning grid \
   --make-plots
@@ -75,7 +104,7 @@ clustek2d --help
 ### Python Usage
 
 Programmatic access to the 2D pipeline is available via the Python API.  
-We recommend reviewing the fully working reference scripts provided in the `examples/` directory:
+We recommend reviewing the example scripts provided in the `examples/` directory:
 
 - `examples/run_aggregation_grid.py`
 - `examples/run_aggregation_bo.py`
@@ -83,11 +112,32 @@ We recommend reviewing the fully working reference scripts provided in the `exam
 - `examples/run_sset1_grid.py`, `examples/run_sset1_bo.py`
 
 These scripts demonstrate both grid-search and Bayesian-optimization workflows  
-and are the recommended starting point for Python users.
+and are the recommended starting point for the users.
 
 ---
+## Repository Structure
+src/clustek/        Core implementation (2D/3D, diffusion, OC-CCA)
+examples/           End-to-end pipelines and scripts
+data/               Synthetic and MD example datasets
+docs/               Usage documentation
+tests/              Unit and smoke tests
 
-### Detailed Documentation
+
+
+
+## Reproducibility
+
+ClusTEK includes:
+
+- synthetic benchmarks
+- 3D MD snapshots (e.g., 9k, 180k systems)
+- parameter sweeps and evaluation scripts
+
+Benchmark results and summaries are generated via the example pipelines.
+
+
+
+### Documentation
 
 For a complete description of the 2D pipeline, including parameter explanations,  
 CLI usage, and expected outputs, see:
@@ -95,9 +145,6 @@ CLI usage, and expected outputs, see:
 **2D Usage Guide:** `docs/usage_2d.md`
 
 
-## Reproducible benchmark scripts
-
-- `examples/run_benchmark_3d.py` — template driver for scanning `(cell_size, C_thr)` and recording runtime/memory.
 
 ## Development
 
@@ -113,14 +160,16 @@ Lint (optional):
 ruff check .
 ```
 
+
 ## Citation
 
-If you use ClusTEK in academic work, please cite:
+If you use ClusTEK, please cite:
 
 Tourani, E., Edwards, J. B., Khomami, B. (2025).  
 **ClusTEK**: A grid clustering algorithm augmented with diffusion imputation and origin-constrained connected-component analysis:  
 Application to polymer crystallization.  
 https://doi.org/10.48550/arXiv.2512.16110
+
 
 
 ## License

@@ -50,6 +50,7 @@ examples/outputs/**
 # Allow docs images
 !docs/*.png
 !README_assets/*.png
+!README_assets/*.pdf
 
 # Logs
 *.log

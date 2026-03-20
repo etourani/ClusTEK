@@ -13,7 +13,7 @@ While motivated by molecular simulations data, the method is applicable to a wid
 
 ## Method Overview
 
-![ClusTEK pipeline](README_assets/ClusTEK_pipeline.pdf)
+![ClusTEK pipeline](README_assets/ClusTEK_pipeline.jpg)
 
 ClusTEK consists of two main stages (Stage II is the main novelty in this contribution):
 

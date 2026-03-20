@@ -9,7 +9,7 @@ from clustek import run_pipeline_2d as run_pipeline
 
 HERE = os.path.dirname(__file__)
 DATA = os.path.join(HERE, "..", "..", "data", "synthetic", "R15.csv")
-OUT  = os.path.join(HERE, "out_R15_bo")
+OUT  = os.path.join(HERE, "out_R15_bo_0.25_0.25_0.50")
 os.makedirs(OUT, exist_ok=True)
 
 if __name__ == "__main__":
@@ -24,7 +24,7 @@ if __name__ == "__main__":
             # ---- stageA = BO (with(h, R), fixed weights here) ---
             TUNING='bo',
             BO_OPT_WEIGHTS=False, 
-            W_SIL=0.33, W_DBI=0.34, W_COV=0.33,
+            W_SIL=0.25, W_DBI=0.25, W_COV=0.50,
             BO_N_CALLS=50,
             H_BOUNDS_REL=(0.5, 1.25),
             R_RANGE=(2, 20),

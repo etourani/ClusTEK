@@ -47,8 +47,10 @@ examples/outputs/**
 *.png
 *.pdf
 *.svg
+*.jpg
 # Allow docs images
 !docs/*.png
+!docs/*.jpg
 !README_assets/*.png
 !README_assets/*.pdf
 

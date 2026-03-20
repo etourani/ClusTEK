@@ -10,7 +10,7 @@ While motivated by molecular simulation data, the method is applicable to a wide
 
 ## Method Overview
 
-![ClusTEK pipeline](README_assets/ClusTEK_pipeline.jpg)
+![ClusTEK pipeline](docs/ClusTEK_pipeline.jpg)
 
 ClusTEK consists of two main stages, with Stage II introducing the diffusion-imputation and topology-preserving clustering framework:
 

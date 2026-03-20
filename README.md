@@ -1,12 +1,9 @@
 # ClusTEK
 
-**ClusTEK** is a grid-based clustering toolkit built upon grid aggregation, diffusion imputation, and connected-component analysis.
+**ClusTEK** is a grid-based clustering toolkit that combines grid aggregation, diffusion-based imputation, and topology-preserving connected-component analysis.
 
 
-The method combines grid discretization, local diffusion-based imputation, and topology-preserving connected-component analysis to recover physically meaningful clusters under sparse and noisy sampling conditions.
-
-
-While motivated by molecular simulations data, the method is applicable to a wide range of spatially structured datasets.
+While motivated by molecular simulation data, the method is applicable to a wide range of spatially structured datasets.
 
 
 ---
@@ -15,7 +12,7 @@ While motivated by molecular simulations data, the method is applicable to a wid
 
 ![ClusTEK pipeline](README_assets/ClusTEK_pipeline.jpg)
 
-ClusTEK consists of two main stages (Stage II is the main novelty in this contribution):
+ClusTEK consists of two main stages, with Stage II introducing the diffusion-imputation and topology-preserving clustering framework:
 
 ### **Stage I — Grid construction and pre-diffusion classification**
 - Discretize space into a structured grid
@@ -27,7 +24,7 @@ ClusTEK consists of two main stages (Stage II is the main novelty in this contri
   using a threshold \( C_{\mathrm{thr}} \)
 
 ### **Stage II — Diffusion imputation and clustering**
-- Apply **finite, local diffusion** to propagate information from dense → sparse cells (or missing value cells) 
+- Apply **finite, local diffusion** to propagate information from dense to neighboring sparse cells 
 - Dense cells are **clamped** (Dirichlet constraint)
 - Sparse cells are updated iteratively to obtain \( C^{(n)} \)
 - Perform **origin-constrained connected-component analysis (OC-CCA)**:
@@ -45,7 +42,8 @@ From the repository root:
 ```bash
 pip install -e .
 ```
-
+> If the CLI command is not found after installation, ensure your Python environment is activated and that the editable install completed successfully.
+ 
 This installs the core ClusTEK package and its dependencies.
 
 To install additional tools needed for development (testing, linting, benchmarks), use:
@@ -59,9 +57,10 @@ pip install -e ".[dev]"
 > may be added in future releases.
 
 
+
 ## Quickstart
 
-## 2D Clustering Pipeline
+### 2D Clustering Pipeline
 
 **ClusTEK** provides a fully automated 2D diffusion-enhanced grid clustering pipeline.  
 This is the recommended entry point for new users.
@@ -112,16 +111,54 @@ We recommend reviewing the example scripts provided in the `examples/` directory
 - `examples/run_sset1_grid.py`, `examples/run_sset1_bo.py`
 
 These scripts demonstrate both grid-search and Bayesian-optimization workflows  
-and are the recommended starting point for the users.
+and are the recommended starting point for users.
 
 ---
+
+### Input formats and MD data support
+
+ClusTEK supports standard CSV inputs for both 2D and 3D workflows.
+
+For molecular dynamics applications, ClusTEK also provides utilities for reading **LAMMPS dump files** directly:
+
+- supports plain-text dump files (`.dump`)
+- supports gzipped dump files (`.dump.gz`)
+- preserves box-bound information (`xlo`, `xhi`, `ylo`, `yhi`, `zlo`, `zhi`)
+- can optionally generate a binary `c_label` column from any scalar dump attribute using a user-defined threshold and comparison operator
+
+The core parser is implemented in:
+
+```text
+src/clustek/io.py
+```
+
+A lightweight example conversion script is provided in:
+
+```text
+examples/scripts/dump_to_csv.py
+```
+
+Example:
+
+```bash
+python examples/scripts/dump_to_csv.py data/md/180k_one_timestep.dump \
+  --out 180k_one_timestep.csv \
+  --label-col c_Entp \
+  --threshold -5.8 \
+  --comparison "<"
+```
+
+---
+
+
 ## Repository Structure
+```text
 src/clustek/        Core implementation (2D/3D, diffusion, OC-CCA)
 examples/           End-to-end pipelines and scripts
 data/               Synthetic and MD example datasets
 docs/               Usage documentation
 tests/              Unit and smoke tests
-
+```
 
 
 

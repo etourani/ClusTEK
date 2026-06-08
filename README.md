@@ -202,10 +202,10 @@ ruff check .
 
 If you use ClusTEK, please cite:
 
-Tourani, E., Edwards, J. B., Khomami, B. (2025).  
+Tourani, E., Edwards, J. B., Khomami, B.  
 **ClusTEK**: A grid clustering algorithm augmented with diffusion imputation and origin-constrained connected-component analysis:  
 Application to polymer crystallization.  
-https://doi.org/10.48550/arXiv.2512.16110
+https://doi.org/10.1063/5.0316843
 
 
 
